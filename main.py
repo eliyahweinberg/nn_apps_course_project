@@ -42,34 +42,35 @@ def main(is_train, epochs, batch, dimensions, model_weights_name=None, tf_gpu_se
     pretrained_weights = WEIGHT_PASS + 'zssr_weights.h5'
     zssr_model = zssr.build_model(INITIAL_LRATE, dimensions, pretrained_weights=pretrained_weights)
 
-    if is_train:
-        train_set, test_set = create_dataset(dimensions)
-        train_perceptual_loss(unet_model, 'unet', train_set, test_set, (dimensions, dimensions, NB_CHANNELS), epochs, batch)
-        unet_model.save_weights(WEIGHT_PASS + 'unet_weights.h5')
+    for i in range(5):
+        if is_train:
+            train_set, test_set = create_dataset(dimensions)
+            train_perceptual_loss(unet_model, 'unet', train_set, test_set, (dimensions, dimensions, NB_CHANNELS), epochs, batch, i=str(i))
+            unet_model.save_weights(WEIGHT_PASS + 'unet_weights_{}.h5'.format(i))
 
-        train_perceptual_loss(zssr_model, 'zssr', train_set, test_set, (dimensions, dimensions, NB_CHANNELS), epochs, batch)
-        zssr_model.save_weights(WEIGHT_PASS + 'zssr_weights.h5')
+            train_perceptual_loss(zssr_model, 'zssr', train_set, test_set, (dimensions, dimensions, NB_CHANNELS), epochs, batch, i=str(i))
+            zssr_model.save_weights(WEIGHT_PASS + 'zssr_weights_{}.h5'.format(i))
 
-    data_set = SRDataset(TRAIN_INPUT_DIR, TEST_INPUT_DIR, SAVED_SET_PATH)
-    ground_tr = data_set.get_test_sr()[2]
-    image = data_set.get_test_lr()[2]
-    image = np.expand_dims(image, axis=0)
-    super_image_unet = unet_model.predict(image)
-    super_image_zssr = zssr_model.predict(image)
+        data_set = SRDataset(TRAIN_INPUT_DIR, TEST_INPUT_DIR, SAVED_SET_PATH)
+        ground_tr = data_set.get_test_sr()[2]
+        image = data_set.get_test_lr()[2]
+        image = np.expand_dims(image, axis=0)
+        super_image_unet = unet_model.predict(image)
+        super_image_zssr = zssr_model.predict(image)
 
-    image = np.squeeze(image, axis=0)
-    super_image_unet = np.squeeze(super_image_unet, axis=0)
-    super_image_zssr = np.squeeze(super_image_zssr, axis=0)
+        image = np.squeeze(image, axis=0)
+        super_image_unet = np.squeeze(super_image_unet, axis=0)
+        super_image_zssr = np.squeeze(super_image_zssr, axis=0)
 
-    ground_tr = cv2.convertScaleAbs(ground_tr)
-    image = cv2.convertScaleAbs(image)
-    super_image_zssr = cv2.convertScaleAbs(super_image_zssr)
-    super_image_unet = cv2.convertScaleAbs(super_image_unet)
+        ground_tr = cv2.convertScaleAbs(ground_tr)
+        image = cv2.convertScaleAbs(image)
+        super_image_zssr = cv2.convertScaleAbs(super_image_zssr)
+        super_image_unet = cv2.convertScaleAbs(super_image_unet)
 
-    cv2.imwrite('low_res.png', cv2.cvtColor(image, cv2.COLOR_RGB2BGR), params=[9])
-    cv2.imwrite('ground_truth.png', cv2.cvtColor(ground_tr, cv2.COLOR_RGB2BGR), params=[9])
-    cv2.imwrite('super_res_unet.png', cv2.cvtColor(super_image_unet, cv2.COLOR_RGB2BGR), params=[9])
-    cv2.imwrite('super_res_zssr.png', cv2.cvtColor(super_image_zssr, cv2.COLOR_RGB2BGR), params=[9])
+        cv2.imwrite('low_res.png', cv2.cvtColor(image, cv2.COLOR_RGB2BGR), params=[9])
+        cv2.imwrite('ground_truth.png', cv2.cvtColor(ground_tr, cv2.COLOR_RGB2BGR), params=[9])
+        cv2.imwrite('super_res_unet__{}.png'.format(i), cv2.cvtColor(super_image_unet, cv2.COLOR_RGB2BGR), params=[9])
+        cv2.imwrite('super_res_zssr__{}.png'.format(i), cv2.cvtColor(super_image_zssr, cv2.COLOR_RGB2BGR), params=[9])
 
 
     # history_df = pd.DataFrame(history.history)
@@ -86,5 +87,5 @@ if __name__ == '__main__':
          epochs=5,
          batch=16,
          dimensions=128,
-         model_weights_name='')
+         model_weights_name=None)
 
