@@ -1,7 +1,7 @@
-/finished/
-/model_weights/unet_weights_e4_32_10.h5
-/model_weights/unet_weights_small_5_epochs.h5
-/model_weights/unet_weights_small_e3.h5
-/model_weights/unet_weights_small_e4-50.h5
-/model_weights/weights-improvement_unet-01.hdf5
-/model_weights/weights-improvementunet-01.hdf5
+/Data/finished/
+/PretrainedWeights/unet_weights_e4_32_10.h5
+/PretrainedWeights/unet_weights_small_5_epochs.h5
+/PretrainedWeights/unet_weights_small_e3.h5
+/PretrainedWeights/unet_weights_small_e4-50.h5
+/PretrainedWeights/weights-improvement_unet-01.hdf5
+/PretrainedWeights/weights-improvementunet-01.hdf5

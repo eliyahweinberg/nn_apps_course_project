@@ -10,31 +10,33 @@ TEST_SR = 'test_sr'
 
 
 class SRDataset:
-    def __init__(self, train_path, test_path, save_data_path, image_size=128, imgloader=cv2.imread):
+    def __init__(self, train_path, test_path, save_data_path, scaling_factor=2, target_size=128, is_padding=False, imgloader=cv2.imread):
         self.train_filenames = os.listdir(train_path)
         self.test_filenames = os.listdir(test_path)
         self.save_data_path = save_data_path
         validate_dir(self.save_data_path)
         self.train_path = train_path
         self.test_path = test_path
-        self.image_size = image_size
+        self.target_size = target_size
+        self.scaling_factor = scaling_factor
+        self.is_padding = is_padding
         self.imgloader = imgloader
 
-    def load_data(self):
+    def load_data(self, is_rebuild_train=False, is_rebuild_test=False):
         # try load saved sets
         print('Loading data')
         train_lr = self.load_set(os.path.join(self.save_data_path, TRAIN_LR))
         train_sr = self.load_set(os.path.join(self.save_data_path, TRAIN_SR))
-        if train_lr is None or train_sr is None:
-            print('No saved train set, creating set...')
+        if (train_lr is None or train_sr is None) or is_rebuild_train:
+            print('Creating set...')
             train_lr, train_sr = self._create_set(self.train_path, self.train_filenames)
             self.save_set(os.path.join(self.save_data_path, TRAIN_LR), train_lr)
             self.save_set(os.path.join(self.save_data_path, TRAIN_SR), train_sr)
 
-        test_lr = self.load_set(os.path.join(self.save_data_path, TEST_LR))
-        test_sr = self.load_set(os.path.join(self.save_data_path, TEST_SR))
-        if test_lr is None or test_sr is None:
-            print('No saved test set, creating set...')
+        test_lr = self.get_test_lr()
+        test_sr = self.get_test_sr()
+        if (test_lr is None or test_sr is None) or is_rebuild_test:
+            print('Creating set...')
             test_lr, test_sr = self._create_set(self.test_path, self.test_filenames)
             self.save_set(os.path.join(self.save_data_path, TEST_LR), test_lr)
             self.save_set(os.path.join(self.save_data_path, TEST_SR), test_sr)
@@ -53,6 +55,12 @@ class SRDataset:
             data = None
         return data
 
+    def get_test_lr(self):
+        return self.load_set(os.path.join(self.save_data_path, TEST_LR))
+
+    def get_test_sr(self):
+        return self.load_set(os.path.join(self.save_data_path, TEST_SR))
+
     def _create_set(self, path, files):
         lrs, srs = [], []
 
@@ -65,14 +73,17 @@ class SRDataset:
                     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
                 else:
                     image = np.stack((image,) * 3, axis=-1)
+                if self.is_padding:
+                    image = self._add_padding(image)
                 image = image.astype('float32')
                 # create LR image = input
-                lr = cv2.resize(image, (64, 64))
 
-                lr = self._add_padding(cv2.resize(lr, (128, 128)))
+                lr = cv2.resize(image, (self.target_size / self.scaling_factor, self.target_size / self.scaling_factor))
+
+                lr = cv2.resize(lr, (self.target_size, self.target_size))
 
                 # create SR image = label
-                sr = self._add_padding(cv2.resize(image, (128, 128)))
+                sr = cv2.resize(image, (self.target_size, self.target_size))
                 lrs.append(lr)
                 srs.append(sr)
 
@@ -83,24 +94,24 @@ class SRDataset:
             validate_dir(save_path)
         cv2.imwrite(os.path.join(lr_path, filename), lr)
         cv2.imwrite(os.path.join(sr_path, filename), sr)
-    
-    def _add_padding(self, image):
+
+    @staticmethod
+    def _add_padding(image):
         old_size = image.shape[:2]  # old_size is in (height, width) format
 
-        ratio = float(self.image_size) / max(old_size)
-        new_size = tuple([int(x * ratio) for x in old_size])
+        dimensions = max(old_size)
+        # new_size = tuple([int(x * ratio) for x in old_size])
 
         # new_size should be in (width, height) format
 
-        image = cv2.resize(image, (new_size[1], new_size[0]))
+        # image = cv2.resize(image, (new_size[1], new_size[0]))
 
-        delta_w = self.image_size - new_size[1]
-        delta_h = self.image_size - new_size[0]
+        delta_w = dimensions - old_size[1]
+        delta_h = dimensions - old_size[0]
         top, bottom = delta_h // 2, delta_h - (delta_h // 2)
         left, right = delta_w // 2, delta_w - (delta_w // 2)
 
         color = [0, 0, 0]
         padded = cv2.copyMakeBorder(image, top, bottom, left, right, cv2.BORDER_CONSTANT,
                                     value=color)
-
         return padded
