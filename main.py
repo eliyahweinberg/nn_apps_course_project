@@ -1,12 +1,13 @@
 from srd import SRDataset
 import Models.unet as unet
 import Models.zssr as zssr
-from Models.train import train_perceptual_loss
+from Models.train import train_perceptual_loss, train_zssr
 from keras.layers import *
 from utils import MultiplePlot
 import os
 import cv2
 import pandas as pd
+import matplotlib.pyplot as plt
 from defines import NB_CHANNELS, INITIAL_LRATE, WEIGHT_PASS, TRAIN_INPUT_DIR, TEST_INPUT_DIR, SAVED_SET_PATH,\
                     UNET_WEIGHTS, ZSSR_WEIGHTS, TEST_IMAGES_NUM, TEST_IMAGE_NAME, TEST_IMAGE_PATH
 
@@ -17,7 +18,7 @@ ZSSR = 1
 
 def create_dataset(dimensions):
     data_set = SRDataset(TRAIN_INPUT_DIR, TEST_INPUT_DIR, SAVED_SET_PATH)
-    train_set, test_set = data_set.load_data()
+    train_set, test_set = data_set.load_data(is_rebuild_train=True)
 
     for i in range(2):
         train_set[i] = np.reshape(train_set[i], (len(train_set[i]), dimensions, dimensions, NB_CHANNELS))
@@ -27,7 +28,7 @@ def create_dataset(dimensions):
     return train_set, test_set
 
 
-def create_model(model_type, dimensions, is_weights_required=False):
+def create_model(model_type, dimensions, is_load_weights=True, is_weights_required=False):
     if model_type == UNET:
         model_handler = unet
         model_weights_name = UNET_WEIGHTS
@@ -38,9 +39,9 @@ def create_model(model_type, dimensions, is_weights_required=False):
         raise FileNotFoundError('Unsupported model')
 
     pretrained_weights = None
-    if os.path.isfile(WEIGHT_PASS + model_weights_name):
+    if is_load_weights and os.path.isfile(WEIGHT_PASS + model_weights_name):
         pretrained_weights = WEIGHT_PASS + model_weights_name
-    elif is_weights_required:
+    elif is_load_weights and is_weights_required:
         raise FileNotFoundError('Model weights [{}] not found'.format(pretrained_weights))
 
     model = model_handler.build_model(INITIAL_LRATE, dimensions, pretrained_weights=pretrained_weights)
@@ -69,12 +70,35 @@ def train_model(model, model_name, epochs, batch, dimensions, is_show_history=Tr
     if is_show_history:
         history_df = pd.DataFrame(history.history)
         history_df[['loss', 'val_loss']].plot()
+        plt.show()
+    return model, history
 
 
-def test_image(image, model):
+def process_zssr(image, low_res, target_size, scaling_factor, is_load_weights=False):
+    image = cv2.resize(image, (target_size // scaling_factor, target_size // scaling_factor))
+    model = create_model(ZSSR, None, is_load_weights=is_load_weights)
+    history = train_zssr(model, image)
+    low_res = np.expand_dims(low_res, axis=0)
+    super_image = model.predict(low_res)
+    return super_image
+
+
+def train_unet_denoiser(epochs, batch, dimensions, is_show_history=True, is_load_weights=False):
+    model = create_model(UNET, dimensions, is_load_weights=is_load_weights)
+    model, history = train_model(model, 'unet', epochs, batch, dimensions, is_show_history=is_show_history)
+    return model, history
+
+
+def train_zssr_denoiser(epochs, batch, dimensions, is_show_history=True, is_load_weights=False):
+    model = create_model(ZSSR, dimensions, is_load_weights=is_load_weights)
+    model, history = train_model(model, 'zssr', epochs, batch, dimensions, is_show_history=is_show_history)
+    return model, history
+
+
+def denoise_image(image, model):
 
     image = image.astype('float32')
-    image = np.expand_dims(image, axis=0)
+    # image = np.expand_dims(image, axis=0) already expanded by zssr
     super_image = model.predict(image)
     super_image = np.squeeze(super_image, axis=0)
     super_image = cv2.convertScaleAbs(super_image)
@@ -91,8 +115,11 @@ def test_model(denoiser_model, denoiser_name, image_dimensions, scaling_factor, 
         plotter = MultiplePlot([20, 10], [2, 2])
 
         low_res, ground_truth = create_test_image(image, image_dimensions, scaling_factor)
-        zssr_out = low_res # fixme to real zssr
-        super_image = test_image(zssr_out, denoiser_model)
+        zssr_out = process_zssr(ground_truth, low_res, image_dimensions, scaling_factor)
+        super_image = denoise_image(zssr_out, denoiser_model)
+
+        zssr_out = np.squeeze(zssr_out, axis=0)
+        zssr_out = cv2.convertScaleAbs(zssr_out)
 
         plotter.add(low_res, 'Low Resolution')
         plotter.add(ground_truth, 'Ground Truth')
@@ -120,5 +147,8 @@ def test_zssr(image_dimensions=128, scaling_factor=2, image_name=None):
 if __name__ == '__main__':
     test_unet()
     test_zssr()
+
+
+
 
 
