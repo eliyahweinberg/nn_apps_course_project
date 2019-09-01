@@ -41,7 +41,7 @@ class SRDataset:
             self.save_set(os.path.join(self.save_data_path, TEST_LR), test_lr)
             self.save_set(os.path.join(self.save_data_path, TEST_SR), test_sr)
         print('Data Loaded')
-        return (train_lr, train_sr), (test_lr, test_sr)
+        return [train_lr, train_sr], [test_lr, test_sr]
 
     @staticmethod
     def save_set(name, data):
@@ -78,7 +78,7 @@ class SRDataset:
                 image = image.astype('float32')
                 # create LR image = input
 
-                lr = cv2.resize(image, (self.target_size / self.scaling_factor, self.target_size / self.scaling_factor))
+                lr = cv2.resize(image, (self.target_size // self.scaling_factor, self.target_size // self.scaling_factor))
 
                 lr = cv2.resize(lr, (self.target_size, self.target_size))
 
