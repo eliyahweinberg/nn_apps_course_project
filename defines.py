@@ -2,7 +2,15 @@ X = 0
 Y = 1
 
 WEIGHT_PASS = 'PretrainedWeights/'
+TRAIN_INPUT_DIR = 'Data/finished/train/dataraw/hires'
+TEST_INPUT_DIR = 'Data/finished/valid/dataraw/hires'
+SAVED_SET_PATH = 'Data/finished/set/'
+UNET_WEIGHTS = 'unet_weights.h5'
+ZSSR_WEIGHTS = 'zssr_weights.h5'
 
+TEST_IMAGES_NUM = 3
+TEST_IMAGE_NAME = 'test_{}.png'
+TEST_IMAGE_PATH = 'TestImages'
 
 # scaling factor
 SR_FACTOR = 2

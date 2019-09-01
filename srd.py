@@ -78,12 +78,7 @@ class SRDataset:
                 image = image.astype('float32')
                 # create LR image = input
 
-                lr = cv2.resize(image, (self.target_size // self.scaling_factor, self.target_size // self.scaling_factor))
-
-                lr = cv2.resize(lr, (self.target_size, self.target_size))
-
-                # create SR image = label
-                sr = cv2.resize(image, (self.target_size, self.target_size))
+                lr, sr = self.get_x_y(image, self.target_size, self.scaling_factor)
                 lrs.append(lr)
                 srs.append(sr)
 
@@ -115,3 +110,13 @@ class SRDataset:
         padded = cv2.copyMakeBorder(image, top, bottom, left, right, cv2.BORDER_CONSTANT,
                                     value=color)
         return padded
+
+    @staticmethod
+    def get_x_y(image, target_size, scaling_factor):
+        lr = cv2.resize(image, (target_size // scaling_factor, target_size // scaling_factor))
+
+        lr = cv2.resize(lr, (target_size, target_size))
+
+        # create SR image = label
+        sr = cv2.resize(image, (target_size, target_size))
+        return lr, sr

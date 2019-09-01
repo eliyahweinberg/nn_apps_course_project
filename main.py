@@ -3,15 +3,16 @@ import Models.unet as unet
 import Models.zssr as zssr
 from Models.train import train_perceptual_loss
 from keras.layers import *
-from keras.optimizers import *
+from utils import MultiplePlot
 import os
 import cv2
-from defines import NB_CHANNELS, INITIAL_LRATE, WEIGHT_PASS
+import pandas as pd
+from defines import NB_CHANNELS, INITIAL_LRATE, WEIGHT_PASS, TRAIN_INPUT_DIR, TEST_INPUT_DIR, SAVED_SET_PATH,\
+                    UNET_WEIGHTS, ZSSR_WEIGHTS, TEST_IMAGES_NUM, TEST_IMAGE_NAME, TEST_IMAGE_PATH
 
 
-TRAIN_INPUT_DIR = 'Data/finished/train/dataraw/hires'
-TEST_INPUT_DIR = 'Data/finished/valid/dataraw/hires'
-SAVED_SET_PATH = 'Data/finished/set/'
+UNET = 0
+ZSSR = 1
 
 
 def create_dataset(dimensions):
@@ -26,66 +27,98 @@ def create_dataset(dimensions):
     return train_set, test_set
 
 
-def main(is_train, epochs, batch, dimensions, model_weights_name=None, tf_gpu_session=False, tf_device_count={'GPU': 1, 'CPU': 4}):
-    if tf_gpu_session:
-        import tensorflow as tf
-        config = tf.ConfigProto(device_count=tf_device_count)
-        sess = tf.Session(config=config)
-        K.set_session(sess)
+def create_model(model_type, dimensions, is_weights_required=False):
+    if model_type == UNET:
+        model_handler = unet
+        model_weights_name = UNET_WEIGHTS
+    elif model_type == ZSSR:
+        model_handler = zssr
+        model_weights_name = ZSSR_WEIGHTS
+    else:
+        raise FileNotFoundError('Unsupported model')
 
     pretrained_weights = None
-    if model_weights_name is not None and os.path.isfile(WEIGHT_PASS+model_weights_name):
-        pretrained_weights = WEIGHT_PASS+model_weights_name
+    if os.path.isfile(WEIGHT_PASS + model_weights_name):
+        pretrained_weights = WEIGHT_PASS + model_weights_name
+    elif is_weights_required:
+        raise FileNotFoundError('Model weights [{}] not found'.format(pretrained_weights))
 
-    pretrained_weights = WEIGHT_PASS + 'unet_weights.h5'
-    unet_model = unet.build_model(INITIAL_LRATE, dimensions, pretrained_weights=pretrained_weights)
-    pretrained_weights = WEIGHT_PASS + 'zssr_weights.h5'
-    zssr_model = zssr.build_model(INITIAL_LRATE, dimensions, pretrained_weights=pretrained_weights)
-
-    for i in range(5):
-        if is_train:
-            train_set, test_set = create_dataset(dimensions)
-            train_perceptual_loss(unet_model, 'unet', train_set, test_set, (dimensions, dimensions, NB_CHANNELS), epochs, batch, i=str(i))
-            unet_model.save_weights(WEIGHT_PASS + 'unet_weights_{}.h5'.format(i))
-
-            train_perceptual_loss(zssr_model, 'zssr', train_set, test_set, (dimensions, dimensions, NB_CHANNELS), epochs, batch, i=str(i))
-            zssr_model.save_weights(WEIGHT_PASS + 'zssr_weights_{}.h5'.format(i))
-
-        data_set = SRDataset(TRAIN_INPUT_DIR, TEST_INPUT_DIR, SAVED_SET_PATH)
-        ground_tr = data_set.get_test_sr()[2]
-        image = data_set.get_test_lr()[2]
-        image = np.expand_dims(image, axis=0)
-        super_image_unet = unet_model.predict(image)
-        super_image_zssr = zssr_model.predict(image)
-
-        image = np.squeeze(image, axis=0)
-        super_image_unet = np.squeeze(super_image_unet, axis=0)
-        super_image_zssr = np.squeeze(super_image_zssr, axis=0)
-
-        ground_tr = cv2.convertScaleAbs(ground_tr)
-        image = cv2.convertScaleAbs(image)
-        super_image_zssr = cv2.convertScaleAbs(super_image_zssr)
-        super_image_unet = cv2.convertScaleAbs(super_image_unet)
-
-        cv2.imwrite('low_res.png', cv2.cvtColor(image, cv2.COLOR_RGB2BGR), params=[9])
-        cv2.imwrite('ground_truth.png', cv2.cvtColor(ground_tr, cv2.COLOR_RGB2BGR), params=[9])
-        cv2.imwrite('super_res_unet__{}.png'.format(i), cv2.cvtColor(super_image_unet, cv2.COLOR_RGB2BGR), params=[9])
-        cv2.imwrite('super_res_zssr__{}.png'.format(i), cv2.cvtColor(super_image_zssr, cv2.COLOR_RGB2BGR), params=[9])
+    model = model_handler.build_model(INITIAL_LRATE, dimensions, pretrained_weights=pretrained_weights)
+    return model
 
 
-    # history_df = pd.DataFrame(history.history)
-    # history_df[['loss', 'val_loss']].plot()
-    # history_df[['acc', 'val_acc']].plot()
+def create_test_image(image_name, dimensions, scaling_factor):
+    image = cv2.imread(image_name)
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    lr, sr = SRDataset.get_x_y(image, target_size=dimensions, scaling_factor=scaling_factor)
+    return lr, sr
 
 
-    # plt.figure(figsize=(20, 4))
-    # plt.imshow(sr)
-    # plt.show()
+def train_model(model, model_name, epochs, batch, dimensions, is_show_history=True):
+    train_set, test_set = create_dataset(dimensions)
+    history = train_perceptual_loss(model,
+                                    model_name,
+                                    train_set,
+                                    test_set,
+                                    (dimensions, dimensions, NB_CHANNELS),
+                                    epochs,
+                                    batch,
+                                    use_checkpoint=False)
+    model.save_weights(WEIGHT_PASS + '{}_trained_weights.h5'.format(model_name))
+
+    if is_show_history:
+        history_df = pd.DataFrame(history.history)
+        history_df[['loss', 'val_loss']].plot()
+
+
+def test_image(image, model):
+
+    image = image.astype('float32')
+    image = np.expand_dims(image, axis=0)
+    super_image = model.predict(image)
+    super_image = np.squeeze(super_image, axis=0)
+    super_image = cv2.convertScaleAbs(super_image)
+    return super_image
+
+
+def test_model(denoiser_model, denoiser_name, image_dimensions, scaling_factor, image_name=None):
+    if image_name is not None:
+        test_images = [image_name]
+    else:
+        test_images = [os.path.join(TEST_IMAGE_PATH, TEST_IMAGE_NAME.format(i)) for i in range(1, TEST_IMAGES_NUM+1)]
+
+    for image in test_images:
+        plotter = MultiplePlot([20, 10], [2, 2])
+
+        low_res, ground_truth = create_test_image(image, image_dimensions, scaling_factor)
+        zssr_out = low_res # fixme to real zssr
+        super_image = test_image(zssr_out, denoiser_model)
+
+        plotter.add(low_res, 'Low Resolution')
+        plotter.add(ground_truth, 'Ground Truth')
+        plotter.add(zssr_out, 'ZSSR Output')
+        plotter.add(super_image, 'After {} denoise'.format(denoiser_name))
+        if len(test_images) > 1:
+            save_name = os.path.split(image)[-1]
+        else:
+            save_name = image
+        plotter.save_fig('{}_{}'.format(denoiser_name, save_name))
+        plotter.show()
+        # cv2.imwrite('low_res.png', cv2.cvtColor(low_res, cv2.COLOR_RGB2BGR), params=[9])
+
+
+def test_unet(image_dimensions=128, scaling_factor=2, image_name=None):
+    model = create_model(UNET, image_dimensions, is_weights_required=True)
+    test_model(model, 'unet', image_dimensions, scaling_factor, image_name)
+
+
+def test_zssr(image_dimensions=128, scaling_factor=2, image_name=None):
+    model = create_model(ZSSR, image_dimensions, is_weights_required=True)
+    test_model(model, 'zssr_pretrained', image_dimensions, scaling_factor, image_name)
+
 
 if __name__ == '__main__':
-    main(is_train=True,
-         epochs=5,
-         batch=16,
-         dimensions=128,
-         model_weights_name=None)
+    test_unet()
+    test_zssr()
+
 
